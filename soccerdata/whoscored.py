@@ -1,7 +1,6 @@
 """Scraper for http://whoscored.com."""
 import itertools
 import json
-import re
 import time
 from datetime import datetime
 from pathlib import Path
@@ -226,13 +225,43 @@ class WhoScored(BaseSeleniumReader):
                         "url": league["url"],
                     }
                 )
-
         df = (
             pd.DataFrame(leagues)
             .assign(league=lambda x: x.region + " - " + x.league)
             .pipe(self._translate_league)
             .set_index("league")
             .loc[self._selected_leagues.keys()]
+            .sort_index()
+        )
+        return df
+
+    def read_all_leagues_raw(self) -> pd.DataFrame:
+        """Retrieve the selected leagues from the datasource.
+
+        Returns
+        -------
+        pd.DataFrame
+        """
+        url = WHOSCORED_URL
+        filepath = self.data_dir / "tiers.json"
+        reader = self.get(url, filepath, var="allRegions")
+
+        data = json.load(reader)
+
+        leagues = []
+        for region in data:
+            for league in region["tournaments"]:
+                leagues.append(
+                    {
+                        "region_id": region["id"],
+                        "region": region["name"],
+                        "league_id": league["id"],
+                        "league": league["name"],
+                        "url": league["url"],
+                    }
+                )
+        df = (
+            pd.DataFrame(leagues)
             .sort_index()
         )
         return df
@@ -261,6 +290,7 @@ class WhoScored(BaseSeleniumReader):
                     {
                         "url": node.get("value"),
                         "league": lkey,
+                        "league_raw": league.league_raw,
                         "league_id": league.league_id,
                         "season": season_code(node.text),
                     }
@@ -285,9 +315,7 @@ class WhoScored(BaseSeleniumReader):
         node_stages = self._driver.find_elements(By.XPATH, node_stages_selector)
         stages = []
         for stage in node_stages:
-            if not re.search(r"Grp. ([A-Z])$", stage.text):
-                # there is always a page with all group stage games combined
-                stages.append({"url": stage.get_attribute("value"), "name": stage.text})
+            stages.append({"url": stage.get_attribute("value"), "name": stage.text})
         return stages
 
     def _parse_schedule_page(self) -> Tuple[List[Dict], Optional[WebElement]]:
@@ -357,7 +385,7 @@ class WhoScored(BaseSeleniumReader):
         schedule = [dict(item, stage=stage) for item in schedule]
         return schedule
 
-    def read_schedule(self, force_cache: bool = False) -> pd.DataFrame:  # noqa: C901
+    def read_schedule(self, force_cache: bool = False) -> pd.DataFrame:
         """Retrieve the game schedule for the selected leagues and seasons.
 
         Parameters
@@ -428,7 +456,9 @@ class WhoScored(BaseSeleniumReader):
                     schedule.extend(self._parse_schedule())
 
                 # Cache the data
-                df_schedule = pd.DataFrame(schedule).assign(league=lkey, season=skey)
+                df_schedule = pd.DataFrame(schedule).assign(
+                    league=lkey, season=skey, league_raw=season.league_raw
+                )
                 if not self.no_store:
                     df_schedule.to_csv(filepath, index=False)
 
@@ -439,13 +469,12 @@ class WhoScored(BaseSeleniumReader):
 
             all_schedules.append(df_schedule)
 
-        if len(all_schedules) == 0:
-            return pd.DataFrame(index=["league", "season", "game"])
-
         # Construct the output dataframe
         df = (
             pd.concat(all_schedules)
             .drop_duplicates()
+            #.eval("home_team_raw = home_team")
+            #.eval("away_team_raw = away_team")
             .replace(
                 {
                     "home_team": TEAMNAME_REPLACEMENTS,
@@ -584,10 +613,6 @@ class WhoScored(BaseSeleniumReader):
                         "status": node.xpath("./td[contains(@class,'confirmed')]")[0].text,
                     }
                 )
-
-        if len(match_sheets) == 0:
-            return pd.DataFrame(index=["league", "season", "game", "team", "player"])
-
         df = (
             pd.DataFrame(match_sheets)
             .set_index(["league", "season", "game", "team", "player"])
@@ -768,7 +793,8 @@ class WhoScored(BaseSeleniumReader):
             .pipe(standardize_colnames)
             .assign(
                 player=lambda x: x.player_id.replace(player_names),
-                team=lambda x: x.team_id.replace(team_names).replace(TEAMNAME_REPLACEMENTS),
+                # team_raw=x.team_id.replace(team_names),
+                # team=lambda x: x.team_id.replace(team_names).replace(TEAMNAME_REPLACEMENTS),
             )
         )
 

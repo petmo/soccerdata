@@ -7,6 +7,7 @@ import os
 import sys
 from pathlib import Path
 
+import pretty_errors  # NOQA: F401 (imported but unused)
 from rich.logging import RichHandler
 
 # Configuration
@@ -143,14 +144,6 @@ LEAGUE_DICT = {
         "WhoScored": "France - Ligue 1",
         "season_start": "Aug",
         "season_end": "May",
-    },
-    "INT-World Cup": {
-        "FBref": "FIFA World Cup",
-        "WhoScored": "International - FIFA World Cup",
-    },
-    "INT-Women's World Cup": {
-        "FBref": "FIFA Women's World Cup",
-        "WhoScored": "International - FIFA Women's World Cup",
     },
 }
 _f_custom_league_dict = CONFIG_DIR / "league_dict.json"

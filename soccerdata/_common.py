@@ -14,6 +14,7 @@ import numpy as np
 import pandas as pd
 import requests
 import undetected_chromedriver as uc
+import seleniumwire.undetected_chromedriver as swuc
 from dateutil.relativedelta import relativedelta
 from selenium.common.exceptions import WebDriverException
 
@@ -222,8 +223,9 @@ class BaseReader(ABC):
         """Map source league ID to canonical ID."""
         flip = {v: k for k, v in cls._all_leagues().items()}
         mask = ~df[col].isin(flip)
+        df[f'{col}_raw'] = df[col]
         df.loc[mask, col] = np.nan
-        df[col] = df[col].replace(flip)
+        df[col]= df[col].replace(flip)
         return df
 
     @property
@@ -396,6 +398,7 @@ class BaseSeleniumReader(BaseReader):
             )
 
     def _init_webdriver(self) -> "uc.Chrome":
+        ### Check this: https://scrapeops.io/selenium-web-scraping-playbook/python-selenium-undetected-chromedriver/
         """Start the Selenium driver."""
         # Quit existing driver
         if hasattr(self, "_driver"):
@@ -413,6 +416,25 @@ class BaseSeleniumReader(BaseReader):
             chrome_options.add_argument("--proxy-server=" + proxy_str)
             chrome_options.add_argument("--host-resolver-rules=" + resolver_rules)
         return uc.Chrome(options=chrome_options)
+
+    def _init_webdriver_swuc(self) -> "swuc.Chrome":
+        ### Check this: https://scrapeops.io/selenium-web-scraping-playbook/python-selenium-undetected-chromedriver/
+        """Start the Selenium driver."""
+        # Quit existing driver
+        if hasattr(self, "_driver"):
+            self._driver.quit()
+        # Start a new driver
+        chrome_options = swuc.ChromeOptions()
+        if self.headless:
+            chrome_options.add_argument("--headless")
+        if self.path_to_browser is not None:
+            chrome_options.add_argument("--binary-location=" + str(self.path_to_browser))
+        proxy = self.proxy()
+        if len(proxy):
+            proxy_options = {
+                'proxy': self.proxy() | {'no_proxy': 'localhost,127.0.0.1'}
+            }
+        return swuc.Chrome(options=chrome_options, seleniumwire_options=proxy_options)
 
     def _download_and_save(  # noqa: C901
         self,
